@@ -10,18 +10,27 @@ public class GameScreenController : MonoBehaviour {
 	private Dictionary<DungeonMaster.GameScreen, IGameScreen> gameScreens;
 	private DungeonMaster controller;
 	private BattleScreenController battleScreen;
+	private LobbyScreen lobbyScreen;
 	private List<string> users;
 
 	void OnEnable(){
-		DungeonMaster.OnGameScreenChanged += ChangeScreen;
+		
 	}
 
 	void OnDisable(){
-		DungeonMaster.OnGameScreenChanged -= ChangeScreen;
+		UnsubEvents();
+	}
+	
+	private void SubEvents(){
+		if( controller != null ){
+			controller.OnGameScreenChanged += ChangeScreen;
+		}
 	}
 
-	void Start(){
-		
+	private void UnsubEvents(){
+		if( controller != null ){
+			controller.OnGameScreenChanged -= ChangeScreen;
+		}
 	}
 
 	public void Init( DungeonMaster controller ){
@@ -29,25 +38,50 @@ public class GameScreenController : MonoBehaviour {
 		gameScreens = LoadGameScreens();
 		battleScreen = (BattleScreenController) gameScreens[DungeonMaster.GameScreen.BattleScreen ];
 		battleScreen.Init( this );
-		Debug.Log( gameScreens );
-		currentScreen = DungeonMaster.GameScreen.StartScreen;
+
+		lobbyScreen = (LobbyScreen) gameScreens[ DungeonMaster.GameScreen.LobbyScreen ];
+		lobbyScreen.Init( this );
+
+		currentScreen = DungeonMaster.GameScreen.StartScreen; // safty for previous screen
+		SubEvents();
 	}
 
-	public void StartCountDown(){
-		battleScreen.StartCountDown();
+	public void Activate( DungeonMaster.GameScreen currnetScreen ){
+		switch( currentScreen ){
+			case DungeonMaster.GameScreen.LobbyScreen:
+			lobbyScreen.ResetTimer();
+			lobbyScreen.StartTimer();
+			break;
+			case DungeonMaster.GameScreen.BattleScreen:
+			battleScreen.UpdateUsers( controller.currentUsersMap );
+			battleScreen.StartCountDown();
+			break;
+		}
 	}
 
-	public void BattleComplete(){
-		ChangeScreen( DungeonMaster.GameScreen.StartScreen );
+	public void UpdateUserQueue( Queue<string> userQueue ){
+		lobbyScreen.UpdateQueue( userQueue );
 	}
 
-	public void UserLockedIn( string user, string msg ){
-		battleScreen.UserLockedIn( user, msg );
+	public void UpdateChamp( string champ, string score ){
+		lobbyScreen.UpdateChamp( champ, score );
 	}
 
-	public void SetUsers( List<string> users ){
-		this.users = users;
-		battleScreen.UpdateUsers( users ); 
+	public void LobbyTimerComplete(){
+		controller.LobbyTimerComplete();
+	}
+
+	public void UserLockedIn( string usr ){
+		battleScreen.UserLockedIn( usr );
+	}
+
+	public void ResetGame(){
+		controller.SetChamp();
+		controller.ResetGame();
+	}
+
+	public void WinnerDecided( string usr, string loser ){
+		controller.WinnerDecided( usr, loser );
 	}
 
 	private Dictionary<DungeonMaster.GameScreen,IGameScreen> LoadGameScreens(){
@@ -64,11 +98,7 @@ public class GameScreenController : MonoBehaviour {
 		previousScreen = currentScreen;
 		currentScreen = screen;
 
-		if( previousScreen != DungeonMaster.GameScreen.StartScreen ){
-			gameScreens[ previousScreen ].Clone.SetActive( false );
-		}
-
+		gameScreens[ previousScreen ].Clone.SetActive( false );
 		gameScreens[ currentScreen ].Clone.SetActive( true );
-
 	}
 }

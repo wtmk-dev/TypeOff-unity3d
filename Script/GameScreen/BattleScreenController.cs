@@ -6,23 +6,20 @@ using TMPro;
 public class BattleScreenController : MonoBehaviour, IGameScreen {
 
 	[SerializeField]
-	private GameObject goLeft, goRight, goCountDown;
-	[SerializeField]
+	private TextMeshProUGUI lUsername, rUsername, lScore, rScore, 
+	countDownText, battleText;
 	private float countDownDelay, timeStamp;
+	private int userCount;
+	private string battleLeft = "left", battleRight = "right";
 	private GameScreenController controller;
-	private List<TextMeshProUGUI> leftTexts, rightTexts, countDownTexts;
+	
 	public DungeonMaster.GameScreen Screen { get; set; }
 	public GameObject Clone { get; set; }
-
+	private IEnumerator delayReportWin;
 	private IEnumerator countDownClock;
-	private Dictionary<string,TextMeshProUGUI> userMaps;
-	private List<string> users;
-
-	public void SetActive ( bool isActive ){
-		goLeft.SetActive( isActive );
-		goRight.SetActive( isActive );
-		goCountDown.SetActive( isActive );
-	}
+	private Dictionary<string,double> userTimeMap;
+	private Dictionary<string,string> currentUsers;
+	private List<double> times;
 
 	void Awake(){
 		Screen = DungeonMaster.GameScreen.BattleScreen;
@@ -31,44 +28,37 @@ public class BattleScreenController : MonoBehaviour, IGameScreen {
 
 	public void Init( GameScreenController controller ){
 		this.controller = controller;
-		leftTexts = LoadText( goLeft );
-		rightTexts = LoadText( goRight );
-		countDownTexts = LoadText( goCountDown );
-		UpdateTMPUIText( countDownTexts[ 1 ], "" );
-		userMaps = new Dictionary<string,TextMeshProUGUI>();
-		users = new List<string>();
+		userTimeMap = new Dictionary<string,double>();
+		currentUsers = new Dictionary<string,string>();
+		times = new List<double>();
+		countDownDelay = 1f;
+		userCount = 0;
 	}
 
-	public void UserLockedIn( string user, string msg ){
-		if( msg == countDownTexts[ 1 ].text ){
-			float timeElapsed = Time.timeSinceLevelLoad;
-			timeElapsed -= timeStamp;
-			UpdateTMPUIText( userMaps[ user ], timeElapsed.ToString() );
-		}
-
-		int count = 0;
-		foreach( string usr in users ){
-			if( userMaps[ usr].text != "" ){
-				count++;
-			}
-		}
-
-		if( count == 2 ){
-			controller.BattleComplete();
-		}
+	public void SetActive( bool isActive ){
+		Debug.Log( "bsc set active" );
 	}
 
-	public void UpdateUsers( List<string> users ){
-		this.users = users;
-		UpdateTMPUIText( leftTexts[0], users[0] );
-		userMaps.Add( users[0], leftTexts[1] );
-		UpdateTMPUIText( rightTexts[0], users[1] );
-		userMaps.Add( users[1], rightTexts[1] );
+	public void UpdateUsers( Dictionary<string,string> users ){
+		times = new List<double>();
+		userTimeMap = new Dictionary<string, double>();
+		currentUsers = new Dictionary<string, string>();
+
+		currentUsers.Add( users[ battleLeft ], battleLeft );
+		currentUsers.Add( users[ battleRight ], battleRight );
+		userCount = currentUsers.Count;
+	
+		UpdateTMPUIText( battleText, "" );
+		UpdateTMPUIText( rScore, "" );
+		UpdateTMPUIText( lScore, "" );
+
+		UpdateTMPUIText( lUsername, users[ battleLeft ] );
+		UpdateTMPUIText( rUsername, users[ battleRight ] );
 	}
 
 	public void StartCountDown(){
 		if( countDownClock != null ) {
-			UpdateTMPUIText( countDownTexts[ 1 ], "" );
+			UpdateTMPUIText( countDownText, "" );
 			StopCoroutine( countDownClock );
 		}
 
@@ -76,12 +66,45 @@ public class BattleScreenController : MonoBehaviour, IGameScreen {
 		StartCoroutine( countDownClock );
 	}
 
-	private List<TextMeshProUGUI> LoadText( GameObject go ){
-		List<TextMeshProUGUI> texts = new List<TextMeshProUGUI>();
-		foreach( Transform clone in go.transform ){
-			texts.Add( clone.gameObject.GetComponent<TextMeshProUGUI>() );
+	public void UserLockedIn( string usr ){
+		if( countDownClock != null ){
+			StopCoroutine( countDownClock );
 		}
-		return texts;
+		
+		string side = currentUsers[usr];
+		float time  = Time.timeSinceLevelLoad - timeStamp;
+		
+		if( side == battleLeft ){
+			double lTime = (double) time;
+			UpdateTMPUIText( lScore, lTime.ToString() );
+			userTimeMap.Add( usr, lTime );
+			times.Add( lTime );
+		} else {
+			double rTime = (double) time;
+			UpdateTMPUIText( rScore, rTime.ToString() );
+			userTimeMap.Add( usr, rTime );
+			times.Add( rTime );
+		}
+
+		if( userTimeMap.Count > 0 ){
+			string winner = "";
+			string loser = "";
+			times.Sort();
+			foreach( var item in userTimeMap ){
+				if( item.Value == times[0] ){
+					winner = item.Key;
+				}else{
+					loser = item.Key;
+				}
+			}
+
+			if( delayReportWin != null ){
+				StopCoroutine( delayReportWin );
+			}
+
+			delayReportWin = ReportWinRoutine( winner, loser );
+			StartCoroutine( delayReportWin );
+		}
 	}
 
 	private void UpdateTMPUIText( TextMeshProUGUI text, string rap ){
@@ -89,14 +112,25 @@ public class BattleScreenController : MonoBehaviour, IGameScreen {
 	}
 
 	private IEnumerator CountDownClockRoutine(){
+		yield return new WaitForSeconds( countDownDelay );
 		int count = 3;
-		do{
-			UpdateTMPUIText( countDownTexts[ 0 ], count.ToString() );
+		
+		do {
+			UpdateTMPUIText( countDownText, count.ToString() );
 			yield return new WaitForSeconds( countDownDelay );
 			count--;
-		}while( count > 0 );
+		} while ( count > 0 );
 
 		timeStamp = Time.timeSinceLevelLoad;
-		UpdateTMPUIText( countDownTexts[ 1 ], "lets dule" );
+		UpdateTMPUIText( countDownText, "TYPE!" );
+		UpdateTMPUIText( battleText, "its a game" );
+		yield return new WaitForSeconds( 30f );
+		controller.ResetGame();
+	}
+
+	private IEnumerator ReportWinRoutine( string winner, string loser ){
+		UpdateTMPUIText( countDownText, "( *-* " + winner + " *-* )" );
+		yield return new WaitForSeconds( countDownDelay + 2f );
+		controller.WinnerDecided( winner, loser );
 	}
 }
